@@ -1,26 +1,19 @@
 # Stage 1: Build the Flutter web app
-FROM debian:bullseye AS builder
+FROM cirrusci/flutter:3.19.3 AS builder
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    git \
-    unzip \
-    xz-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Flutter
-RUN git clone https://github.com/flutter/flutter.git /flutter
-ENV PATH="/flutter/bin:${PATH}"
-RUN flutter channel stable && flutter upgrade
-RUN flutter config --enable-web
-
-# Copy the app files
+# Set working directory
 WORKDIR /app
+
+# Copy pubspec files
+COPY pubspec.yaml pubspec.lock ./
+
+# Get packages
+RUN flutter pub get
+
+# Copy the rest of the app source
 COPY . .
 
-# Get app dependencies and build for web
-RUN flutter pub get
+# Build web app
 RUN flutter build web --release
 
 # Stage 2: Serve the app using nginx
