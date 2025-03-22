@@ -1,11 +1,18 @@
 # Stage 1: Build the Flutter web app
-FROM cirrusci/flutter:3.19.3 AS builder
+FROM dart:stable AS builder
+
+# Install Flutter
+RUN git clone https://github.com/flutter/flutter.git /usr/local/flutter
+ENV PATH="/usr/local/flutter/bin:${PATH}"
+RUN flutter channel stable
+RUN flutter doctor
+RUN flutter config --enable-web
 
 # Set working directory
 WORKDIR /app
 
 # Copy pubspec files
-COPY pubspec.yaml pubspec.lock ./
+COPY pubspec.yaml ./
 
 # Get packages
 RUN flutter pub get
