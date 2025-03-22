@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o secretbay ./cmd/secretbay
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o /app/secretbay ./cmd/secretbay
 
 # Use a minimal alpine image for the final stage
 FROM alpine:3.18
@@ -35,12 +35,24 @@ RUN mkdir -p /app/data/temp/public && \
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
-COPY --from=builder /app/secretbay .
+# Copy binary from builder stage with explicit paths
+COPY --from=builder /app/secretbay /app/
 
-# Optionally copy config file - no direct COPY that might fail
-RUN mkdir -p /tmp/config && \
-    test -f /builder/app/config.json && cp /builder/app/config.json . || echo "No config file found."
+# Run a test to ensure the binary exists
+RUN ls -la /app && test -f /app/secretbay
+
+# Set proper permissions
+RUN chmod +x /app/secretbay
+
+# Handle config file using shell command
+RUN echo "Checking for config file..." && \
+    mkdir -p /tmp && \
+    if [ -f /app/config.json ]; then \
+        echo "Config file found, copying..."; \
+        cp /app/config.json /app/; \
+    else \
+        echo "No config file found."; \
+    fi
 
 # Set user to non-root
 USER appuser
@@ -49,4 +61,4 @@ USER appuser
 EXPOSE 8080
 
 # Set entry point
-CMD ["./secretbay"] 
+CMD ["/app/secretbay"] 
