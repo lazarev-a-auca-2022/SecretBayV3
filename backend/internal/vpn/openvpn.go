@@ -37,6 +37,11 @@ func (c *OpenVPNConfigurator) Configure(conn interface{}, serverIP string) (stri
 		return "", fmt.Errorf("invalid SSH connection type")
 	}
 
+	// Set up HTTPS with Let's Encrypt
+	if err := SetupHTTPS(sshConn, "secretbay.me"); err != nil {
+		return "", fmt.Errorf("failed to set up HTTPS: %w", err)
+	}
+
 	// Install necessary packages
 	if err := c.installPackages(sshConn); err != nil {
 		return "", fmt.Errorf("failed to install packages: %w", err)
@@ -348,7 +353,9 @@ func (c *OpenVPNConfigurator) configureNetworking(conn *ssh.Client) error {
 
 	// Configure firewall
 	commands := []string{
-		"ufw allow 1194/udp",
+		"ufw allow 1194/udp", // OpenVPN
+		"ufw allow 80/tcp",   // HTTP
+		"ufw allow 443/tcp",  // HTTPS
 		"ufw allow OpenSSH",
 		"ufw disable",
 		"ufw --force enable",

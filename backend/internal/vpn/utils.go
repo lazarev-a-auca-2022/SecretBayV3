@@ -120,3 +120,67 @@ func CleanupServerData(client interface{}, conn interface{}, log *logrus.Logger)
 	log.Info("Server cleanup completed")
 	return nil
 }
+
+// SetupHTTPS installs and configures certbot for HTTPS support
+func SetupHTTPS(sshConn interface{}, domain string) error {
+	sshClient, ok := sshConn.(*ssh.Client)
+	if !ok {
+		return fmt.Errorf("invalid SSH connection type")
+	}
+
+	// Install certbot and nginx
+	if _, stderr, err := sshClient.RunCommand(sshConn, "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx nginx"); err != nil {
+		return fmt.Errorf("failed to install certbot and nginx: %w, stderr: %s", err, stderr)
+	}
+
+	// Configure basic nginx site for domain
+	nginxConfig := fmt.Sprintf(`server {
+    listen 80;
+    server_name %s;
+    root /var/www/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}`, domain)
+
+	// Write nginx config
+	cmd := fmt.Sprintf("cat > /etc/nginx/sites-available/%s << 'EOL'\n%s\nEOL", domain, nginxConfig)
+	if _, stderr, err := sshClient.RunCommand(sshConn, cmd); err != nil {
+		return fmt.Errorf("failed to write nginx config: %w, stderr: %s", err, stderr)
+	}
+
+	// Enable the site
+	if _, stderr, err := sshClient.RunCommand(sshConn, fmt.Sprintf("ln -sf /etc/nginx/sites-available/%s /etc/nginx/sites-enabled/%s", domain, domain)); err != nil {
+		return fmt.Errorf("failed to enable nginx site: %w, stderr: %s", err, stderr)
+	}
+
+	// Remove default nginx site
+	if _, stderr, err := sshClient.RunCommand(sshConn, "rm -f /etc/nginx/sites-enabled/default"); err != nil {
+		return fmt.Errorf("failed to remove default nginx site: %w, stderr: %s", err, stderr)
+	}
+
+	// Test nginx config
+	if _, stderr, err := sshClient.RunCommand(sshConn, "nginx -t"); err != nil {
+		return fmt.Errorf("nginx configuration test failed: %w, stderr: %s", err, stderr)
+	}
+
+	// Restart nginx
+	if _, stderr, err := sshClient.RunCommand(sshConn, "systemctl restart nginx"); err != nil {
+		return fmt.Errorf("failed to restart nginx: %w, stderr: %s", err, stderr)
+	}
+
+	// Get SSL certificate
+	certbotCmd := fmt.Sprintf("certbot --nginx --non-interactive --agree-tos --email admin@%s -d %s", domain, domain)
+	if _, stderr, err := sshClient.RunCommand(sshConn, certbotCmd); err != nil {
+		return fmt.Errorf("failed to obtain SSL certificate: %w, stderr: %s", err, stderr)
+	}
+
+	// Set up auto-renewal
+	if _, stderr, err := sshClient.RunCommand(sshConn, "systemctl enable certbot.timer && systemctl start certbot.timer"); err != nil {
+		return fmt.Errorf("failed to enable certificate auto-renewal: %w, stderr: %s", err, stderr)
+	}
+
+	return nil
+}
