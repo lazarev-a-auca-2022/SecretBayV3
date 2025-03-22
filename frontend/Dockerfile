@@ -19,16 +19,18 @@ RUN useradd -ms /bin/bash developer
 USER developer
 WORKDIR /home/developer
 
-# Download Flutter SDK
-RUN git clone -b stable https://github.com/flutter/flutter.git
+# Set environment variables for Flutter
+ENV FLUTTER_HOME=/home/developer/flutter
+ENV PATH="$FLUTTER_HOME/bin:$PATH"
+ENV PUB_CACHE=/home/developer/.pub-cache
+ENV FLUTTER_TOOLS_VM_OPTIONS="--old_gen_heap_size=256"
 
-# Add flutter to PATH
-ENV PATH="/home/developer/flutter/bin:${PATH}"
-
-# Run flutter doctor and enable web
-RUN flutter doctor && \
+# Download Flutter SDK and perform initial setup in smaller steps
+RUN git clone -b stable --depth 1 https://github.com/flutter/flutter.git $FLUTTER_HOME && \
+    flutter precache --no-android --no-ios --no-linux --no-windows --no-macos --no-fuchsia --web && \
     flutter config --no-analytics && \
-    flutter config --enable-web
+    flutter config --enable-web && \
+    rm -rf $PUB_CACHE
 
 # Set up app directory
 WORKDIR /home/developer/app
@@ -36,14 +38,14 @@ WORKDIR /home/developer/app
 # Copy pubspec files
 COPY --chown=developer:developer pubspec.yaml ./
 
-# Get packages
-RUN flutter pub get
+# Get packages with reduced concurrency
+RUN flutter pub get --no-offline
 
 # Copy the rest of the app source
 COPY --chown=developer:developer . .
 
-# Build web app
-RUN flutter build web --release
+# Build web app with memory limits
+RUN flutter build web --release --dart-define=Dart_VM_Options=--old_gen_heap_size=256
 
 # Stage 2: Serve the app using nginx
 FROM nginx:alpine
