@@ -8,7 +8,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - secretbay_data:/app/data
+      - ./backend:/app
     restart: unless-stopped
     environment:
       - PORT=8080
@@ -18,7 +18,6 @@ services:
     networks:
       - secretbay-network
 
-  # Frontend service could be added here when developed
   frontend:
     build:
       context: ./frontend
@@ -27,6 +26,8 @@ services:
       - "80:80"
     depends_on:
       - backend
+    volumes:
+      - ./frontend:/app
     restart: unless-stopped
     networks:
       - secretbay-network
