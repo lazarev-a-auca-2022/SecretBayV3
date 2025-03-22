@@ -1,17 +1,46 @@
 # Stage 1: Build the Flutter web app
-FROM us-docker.pkg.dev/flutter-404420/flutter-sdk/flutter:3.19.1 AS builder
+FROM ubuntu:22.04 AS builder
+
+# Avoid tzdata interactive setup
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install required dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    unzip \
+    xz-utils \
+    zip \
+    libglu1-mesa \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user
+RUN useradd -ms /bin/bash developer
+USER developer
+WORKDIR /home/developer
+
+# Download Flutter SDK
+RUN git clone -b stable https://github.com/flutter/flutter.git
+
+# Add flutter to PATH
+ENV PATH="/home/developer/flutter/bin:${PATH}"
+
+# Run flutter doctor and enable web
+RUN flutter doctor && \
+    flutter config --no-analytics && \
+    flutter config --enable-web
 
 # Set up app directory
-WORKDIR /app
+WORKDIR /home/developer/app
 
 # Copy pubspec files
-COPY pubspec.yaml ./
+COPY --chown=developer:developer pubspec.yaml ./
 
 # Get packages
 RUN flutter pub get
 
 # Copy the rest of the app source
-COPY . .
+COPY --chown=developer:developer . .
 
 # Build web app
 RUN flutter build web --release
@@ -20,7 +49,7 @@ RUN flutter build web --release
 FROM nginx:alpine
 
 # Copy the built app to nginx
-COPY --from=builder /app/build/web /usr/share/nginx/html
+COPY --from=builder /home/developer/app/build/web /usr/share/nginx/html
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
