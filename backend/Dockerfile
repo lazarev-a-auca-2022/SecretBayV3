@@ -1,64 +1,44 @@
 FROM golang:1.21-alpine AS builder
 
-# Install git and CA certificates
-RUN apk add --no-cache git ca-certificates tzdata
+# Install build dependencies
+RUN apk add --no-cache git
 
 # Set working directory
-WORKDIR /app
+WORKDIR /build
 
-# Copy go.mod and go.sum files
-COPY go.mod .
-COPY go.sum .
-
-# Download dependencies
+# Copy go.mod and go.sum first for better caching
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
+# Copy the rest of the source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o /app/secretbay ./cmd/secretbay
+# Build the application with explicit output name
+RUN go build -o main ./cmd/secretbay/main.go
 
-# Use a minimal alpine image for the final stage
-FROM alpine:3.18
+# Create a minimal runtime image
+FROM alpine:latest
 
-# Add necessary runtime packages
-RUN apk --no-cache add ca-certificates tzdata
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates
 
-# Create non-root user
-RUN adduser -D -H -h /app appuser
+# Create app directory
+RUN mkdir /app
 
-# Create data directory with proper permissions
-RUN mkdir -p /app/data/temp/public && \
-    chown -R appuser:appuser /app
+# Copy the binary from builder stage
+COPY --from=builder /build/main /app/main
+
+# Check that the binary exists and is executable
+RUN ls -la /app/main && chmod +x /app/main
 
 # Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage with explicit paths
-COPY --from=builder /app/secretbay /app/
+# Create necessary directories
+RUN mkdir -p /app/data/temp/public
 
-# Run a test to ensure the binary exists
-RUN ls -la /app && test -f /app/secretbay
-
-# Set proper permissions
-RUN chmod +x /app/secretbay
-
-# Handle config file using shell command
-RUN echo "Checking for config file..." && \
-    mkdir -p /tmp && \
-    if [ -f /app/config.json ]; then \
-        echo "Config file found, copying..."; \
-        cp /app/config.json /app/; \
-    else \
-        echo "No config file found."; \
-    fi
-
-# Set user to non-root
-USER appuser
-
-# Expose port
+# Expose the port
 EXPOSE 8080
 
-# Set entry point
-CMD ["/app/secretbay"] 
+# Run the binary
+CMD ["/app/main"] 
